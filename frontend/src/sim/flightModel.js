@@ -117,34 +117,34 @@ export const flightPrograms = [
   {
     id: 'level-flight',
     title: '保持高度平飞',
-    subtitle: '稳住高度、微调油门',
-    description: '从中低空稳定飞行开始，演示如何把垂直速度压到接近 0，持续保持高度。',
+    subtitle: '1500 米平飞保持',
+    description: '从约 1500 米高度开始，演示如何把垂直速度压到接近 0，并在高空保持稳定平飞。',
     duration: 26,
     preset: {
-      speed: 54,
-      airspeed: 54,
-      altitude: 92,
+      speed: 60,
+      airspeed: 60,
+      altitude: 1500,
       distance: 2140,
-      verticalSpeed: 0.4,
-      pitch: 3,
+      verticalSpeed: 0.1,
+      pitch: 2.2,
       phase: '巡航',
-      feedback: '平飞的关键不是继续爬升，而是让高度变化率尽量接近 0。'
+      feedback: '高空平飞的关键不是继续爬升，而是把高度变化率压到接近 0。'
     },
     startControls: {
-      throttle: 54,
-      angleOfAttack: 4.2,
+      throttle: 34,
+      angleOfAttack: 2.6,
       flaps: 0,
       gearDown: false,
-      wind: 4,
+      wind: 2,
       windShear: false,
       windTunnel: false,
       engineFailure: false
     },
     steps: [
-      { until: 6, label: '先观察高度和垂直速度，确认飞机没有明显上冲或下坠。', throttle: 54, angleOfAttack: 4.1, flaps: 0, gearDown: false },
-      { until: 13, label: '如果还有轻微爬升，略收油门并减小迎角。', throttle: 51, angleOfAttack: 3.8, flaps: 0, gearDown: false },
-      { until: 20, label: '当高度略有下降时，再做很小幅度修正，不要大动作拉杆。', throttle: 53, angleOfAttack: 4.1, flaps: 0, gearDown: false },
-      { until: 26, label: '维持干净构型，让垂直速度接近 0，保持持续平飞。', throttle: 52, angleOfAttack: 4, flaps: 0, gearDown: false }
+      { until: 6, label: '先观察 1500 米高度附近的垂直速度，确认没有明显上冲或下沉。', throttle: 34, angleOfAttack: 2.6, flaps: 0, gearDown: false },
+      { until: 13, label: '如果还有轻微爬升，略收油门并减小迎角。', throttle: 31, angleOfAttack: 2.3, flaps: 0, gearDown: false },
+      { until: 20, label: '当高度略有回落时，只做很小幅度修正，不要大动作拉杆。', throttle: 33, angleOfAttack: 2.5, flaps: 0, gearDown: false },
+      { until: 26, label: '维持干净构型，让垂直速度贴近 0，持续保持 1500 米平飞。', throttle: 32, angleOfAttack: 2.4, flaps: 0, gearDown: false }
     ]
   },
   {
@@ -447,14 +447,35 @@ export function prepareProgram(programId, flight, controls) {
   return program;
 }
 
-export function applyProgramControls(controls, programId, programElapsed) {
+export function applyProgramControls(controls, programId, programElapsed, flight) {
   const program = flightPrograms.find((item) => item.id === programId) || flightPrograms[0];
   const foundIndex = program.steps.findIndex((item) => programElapsed <= item.until);
   const stepIndex = foundIndex >= 0 ? foundIndex : program.steps.length - 1;
   const step = program.steps[stepIndex] || program.steps[program.steps.length - 1];
+  let targetThrottle = step.throttle;
+  let targetAngleOfAttack = step.angleOfAttack;
 
-  controls.throttle = approach(Number(controls.throttle), step.throttle, 1.15);
-  controls.angleOfAttack = approach(Number(controls.angleOfAttack), step.angleOfAttack, 0.12);
+  if (program.id === 'level-flight' && flight) {
+    const targetAltitude = program.preset?.altitude ?? flight.altitude;
+    const targetSpeed = program.preset?.speed ?? flight.speed;
+    const altitudeError = targetAltitude - flight.altitude;
+    const verticalSpeedError = -flight.verticalSpeed;
+    const speedError = targetSpeed - flight.speed;
+
+    targetThrottle = clamp(
+      step.throttle + altitudeError * 0.18 + verticalSpeedError * 2 + speedError * 0.35,
+      18,
+      48
+    );
+    targetAngleOfAttack = clamp(
+      step.angleOfAttack + altitudeError * 0.025 + verticalSpeedError * 0.22,
+      0.8,
+      3.6
+    );
+  }
+
+  controls.throttle = approach(Number(controls.throttle), targetThrottle, 1.15);
+  controls.angleOfAttack = approach(Number(controls.angleOfAttack), targetAngleOfAttack, 0.12);
   controls.flaps = step.flaps;
   controls.gearDown = step.gearDown;
   if (typeof step.windShear === 'boolean') {

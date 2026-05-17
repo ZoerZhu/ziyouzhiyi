@@ -40,7 +40,7 @@ const keyboardHints = [
   { key: 'F', label: '襟翼循环' },
   { key: 'G', label: '起落架' },
   { key: 'B', label: '风切变' },
-  { key: 'T', label: '风洞流线' },
+  { key: 'T', label: '实时风洞气流' },
   { key: 'E', label: '单发失效' },
   { key: 'H', label: '受力面板' },
   { key: 'V', label: '切换视角' },
@@ -128,8 +128,8 @@ const explanationLibrary = {
   'level-flight': [
     {
       title: '先看高度变化率',
-      principle: '平飞不是只看高度数字，而是先看垂直速度是否接近 0。只有不上冲也不下沉，才算真正稳住高度。',
-      watch: '观察垂直速度逐步收敛，同时高度读数变化变慢。'
+      principle: '在 1500 米平飞时，不是只看高度数字，而是先看垂直速度是否接近 0。只有不上冲也不下沉，才算真正稳住高度。',
+      watch: '观察垂直速度逐步收敛，同时高度读数稳定在 1500 米附近。'
     },
     {
       title: '轻微收油门抑制上冲',
@@ -138,13 +138,13 @@ const explanationLibrary = {
     },
     {
       title: '小修正比大动作更稳',
-      principle: '平飞阶段最怕反复过度修正。高度稍有波动时，用很小幅度的油门和迎角调整，就能把飞机重新带回平衡。',
-      watch: '高度曲线轻微起伏，但整体保持在同一高度层附近。'
+      principle: '1500 米平飞阶段最怕反复过度修正。高度稍有波动时，用很小幅度的油门和迎角调整，就能把飞机重新带回平衡。',
+      watch: '高度曲线轻微起伏，但整体保持在 1500 米这一高度层附近。'
     },
     {
       title: '维持干净构型持续平飞',
       principle: '收起襟翼和起落架后阻力更小，更适合长期平飞。此时重点是让升力接近重力、推力接近阻力。',
-      watch: '襟翼和起落架保持收起，垂直速度接近 0，飞机稳定向前。'
+      watch: '襟翼和起落架保持收起，垂直速度接近 0，飞机稳定保持在 1500 米附近。'
     }
   ],
   landing: [
@@ -227,7 +227,7 @@ const explanationLibrary = {
     {
       title: '减小迎角',
       principle: '失速的核心不是发动机停转，而是迎角过大导致机翼上方气流分离。',
-      watch: '风洞流线打开后可以看到气流重新贴近机翼。'
+      watch: '打开实时风洞气流后，可以看到气流重新贴近机翼。'
     },
     {
       title: '恢复能量',
@@ -298,7 +298,7 @@ const App = {
       gearDown: true,
       wind: 4,
       windShear: false,
-      windTunnel: false,
+      windTunnel: true,
       engineFailure: false,
       landingAssist: false
     });
@@ -468,7 +468,7 @@ const App = {
 
         if (!usedKeyboard && activeProgram.value) {
           programElapsed.value = Math.min(programElapsed.value + simulationDelta, activeProgram.value.duration);
-          programCue.value = applyProgramControls(controls, currentProgramId.value, programElapsed.value);
+          programCue.value = applyProgramControls(controls, currentProgramId.value, programElapsed.value, flight);
           const nextExplanationKey = `${currentProgramId.value}-${programCue.value.stepIndex}`;
           if (nextExplanationKey !== lastExplanationKey.value) {
             lastExplanationKey.value = nextExplanationKey;
@@ -497,7 +497,7 @@ const App = {
       controls.gearDown = true;
       controls.wind = 4;
       controls.windShear = false;
-      controls.windTunnel = false;
+      controls.windTunnel = true;
       controls.engineFailure = false;
       controls.landingAssist = false;
       history.value = [];
@@ -526,7 +526,7 @@ const App = {
       const program = prepareProgram(programId, flight, controls);
       currentProgramId.value = program.id;
       programElapsed.value = 0;
-      programCue.value = applyProgramControls(controls, program.id, 0);
+      programCue.value = applyProgramControls(controls, program.id, 0, flight);
       explanationOpen.value = true;
       lastExplanationKey.value = `${program.id}-0`;
       demoMode.value = false;
@@ -874,16 +874,21 @@ const App = {
             <span>迎角 {{ formatNumber(controls.angleOfAttack, 1) }}°</span>
           </div>
 
-          <aside v-if="viewMode === 'cockpit'" class="cockpit-force-panel glass" :class="{ collapsed: !forceHudOpen }">
+          <aside class="cockpit-force-panel glass" :class="{ collapsed: !forceHudOpen }">
             <button type="button" @click="forceHudOpen = !forceHudOpen">
               {{ forceHudOpen ? '收起受力坐标' : '打开受力坐标' }}
             </button>
             <div v-if="forceHudOpen">
-              <h3>3D 坐标 / 受力</h3>
+              <h3>质点坐标 / 受力</h3>
               <div class="coord-grid">
                 <span>X</span><strong>{{ formatNumber(threeCoordinates.x, 2) }}</strong>
                 <span>Y</span><strong>{{ formatNumber(threeCoordinates.y, 2) }}</strong>
                 <span>Z</span><strong>{{ formatNumber(threeCoordinates.z, 2) }}</strong>
+              </div>
+              <div class="axis-legend">
+                <span>X 横向</span>
+                <span>Y 竖直</span>
+                <span>Z 前向</span>
               </div>
               <div class="force-mini">
                 <label><span>升力</span><strong>{{ formatNumber(flight.lift, 0) }} N</strong></label>
@@ -1083,7 +1088,7 @@ const App = {
 
         <label class="switch-control">
           <input type="checkbox" v-model="controls.windTunnel" @change="stopAutoModes" />
-          <span>风洞流线</span>
+          <span>实时风洞气流</span>
         </label>
 
         <label class="switch-control danger-switch">
@@ -1154,7 +1159,7 @@ function buildProgramExplanation(program, cue, flight, controls, completed) {
   };
   const flapText = ['收起', '起飞档', '降落档'][Number(controls.flaps)] || '未知';
   const emergencyText = controls.engineFailure ? '，单发失效已触发' : '';
-  const tunnelText = controls.windTunnel ? '，风洞流线开启' : '';
+  const tunnelText = controls.windTunnel ? '，实时风洞气流开启' : '';
   return {
     eyebrow: completed ? '示例完成' : `第 ${cue.stepIndex + 1} 步 / ${program.steps.length}`,
     title: entry.title,
